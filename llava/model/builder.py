@@ -21,6 +21,25 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAn
 import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+
+@dataclass
+class ModelArguments:
+    model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    version: Optional[str] = field(default="v0")
+    freeze_backbone: bool = field(default=False)
+    tune_mm_mlp_adapter: bool = field(default=False)
+    vision_tower: Optional[str] = field(default=None)
+    mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
+    pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
+    mm_projector_type: Optional[str] = field(default='linear')
+    mm_use_im_start_end: bool = field(default=False)
+    projector_weights_path: Optional[str] = field(default=None)
+    mm_use_im_patch_token: bool = field(default=True)
+    mm_patch_merge_type: Optional[str] = field(default='flat')
+    mm_vision_select_feature: Optional[str] = field(default="patch")
+
 
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
@@ -113,12 +132,46 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     **kwargs
                 )
             else:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-                model = LlavaLlamaForCausalLM.from_pretrained(
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+                    model = LlavaLlamaForCausalLM.from_pretrained(
                     model_path,
                     low_cpu_mem_usage=True,
                     **kwargs
-                )
+                    )
+                except:
+                    tokenizer = AutoTokenizer.from_pretrained(
+                            "lmsys/vicuna-13b-v1.5",
+                            model_max_length=1024,
+                            padding_side="right",
+                            use_fast=False,
+                        )
+                    model = LlavaLlamaForCausalLM.from_pretrained(
+                    "lmsys/vicuna-13b-v1.5",
+                    low_cpu_mem_usage=True,
+                    **kwargs
+                    )
+                    
+                    model_args = ModelArguments(
+                        model_name_or_path = "lmsys/vicuna-13b-v1.5",
+                        version = "plain",
+                        tune_mm_mlp_adapter = True, 
+                        vision_tower = "openai/clip-vit-base-patch16",
+                        mm_vision_select_layer = -2,   # default to the last layer
+                        pretrain_mm_mlp_adapter = "checkpoints/graft_pretrain/mm_projector.bin",
+                        mm_projector_type = "mlp2x_gelu", 
+                        mm_use_im_start_end = True,
+                        mm_use_im_patch_token = False
+                    )
+                    
+                    model.get_model().initialize_vision_modules(
+                    model_args=model_args
+                    )
+                    
+                    # model.get_model().initialize_vision_tokenizer(
+                    # model_args=model_args, tokenizer=tokenizer)
+            
+                
     else:
         # Load language model
         if model_base is not None:
@@ -147,6 +200,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
         mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
         if mm_use_im_patch_token:
+            # print(tokenizer)
             tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
         if mm_use_im_start_end:
             tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)

@@ -33,13 +33,18 @@ class CLIPVisionTower(nn.Module):
         self.is_loaded = True
 
     def feature_select(self, image_forward_outs):
+        # print("image_forward_outs", image_forward_outs.hidden_states[-1].shape)
         image_features = image_forward_outs.hidden_states[self.select_layer]
+        print("hidden layers shapes")
+        print(x.shape for x in image_forward_outs.hidden_states)
+        print("image_features", image_features.shape)
         if self.select_feature == 'patch':
             image_features = image_features[:, 1:]
         elif self.select_feature == 'cls_patch':
             image_features = image_features
         else:
             raise ValueError(f'Unexpected select feature: {self.select_feature}')
+        print("image_features", image_features.shape)
         return image_features
 
     @torch.no_grad()
@@ -53,7 +58,7 @@ class CLIPVisionTower(nn.Module):
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
             image_features = self.feature_select(image_forward_outs).to(images.dtype)
-
+        print("forward image_features", image_features.shape)
         return image_features
 
     @property
@@ -132,6 +137,7 @@ class CLIPVisionTowerS2(CLIPVisionTower):
 
     @torch.no_grad()
     def forward(self, images):
+        print("images", images.shape)
         if type(images) is list:
             image_features = []
             for image in images:

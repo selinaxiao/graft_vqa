@@ -61,6 +61,7 @@ class ModelArguments:
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
     mm_use_im_start_end: bool = field(default=False)
+    projector_weights_path: Optional[str] = field(default=None)
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
@@ -592,6 +593,7 @@ def preprocess_plain(
     # add end signal and concatenate together
     conversations = []
     for source in sources:
+        # print(source)
         assert len(source) == 2
         assert DEFAULT_IMAGE_TOKEN in source[0]['value']
         source[0]['value'] = DEFAULT_IMAGE_TOKEN
@@ -698,7 +700,11 @@ class LazySupervisedDataset(Dataset):
             image_file = self.list_data_dict[i]['image']
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
+            # print(os.path.join(image_folder, image_file))
+            # print(exists(os.path.join(image_folder, image_file)))
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            # print("train.py line 704 image size, opened image size",image.size)
+            # print("whether to pad", self.data_args.image_aspect_ratio == 'pad')
             if self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -714,8 +720,10 @@ class LazySupervisedDataset(Dataset):
                         return result
                 image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                 image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                # print("afterprocess", image.size())
             else:
                 image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                # print("afterprocess", image.size())
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
@@ -736,6 +744,10 @@ class LazySupervisedDataset(Dataset):
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+        # print("shape of image", data_dict['image'].shape)
+        # crop_size = self.data_args.image_processor.crop_size
+        # print("crop size", crop_size)
+        # print("image size in train.py line 739", data_dict['image'].size())
         return data_dict
 
 
@@ -942,6 +954,12 @@ def train(attn_implementation=None):
         training_args.use_im_start_end = model_args.mm_use_im_start_end
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+        
+        #add MLP weights
+        if model_args.projector_weights_path:
+            projector_weights = torch.load(model_args.projector_weights_path)
+            model.get_model().mm_projector.load_state_dict(projector_weights)
+            rank0_print("Loaded projector weights from", model_args.projector_weights_path)
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer

@@ -1,0 +1,37 @@
+#!/bin/bash
+deepspeed ../../llava/train/train_mem.py \
+    --deepspeed ../../scripts/zero2.json \
+    --model_name_or_path lmsys/vicuna-13b-v1.5 \
+    --version plain \
+    --data_path ../../playground/data/LLaVa-Pretrain/summarizations-llama-3-8b-instruct-32k.json \
+    --image_folder ../../ \
+    --vision_tower openai/clip-vit-large-patch14-336 \
+    --mm_projector_type mlp2x_gelu \
+    --pretrain_mm_mlp_adapter mm_projector.bin \
+    --tune_mm_mlp_adapter True \
+    --mm_vision_select_layer -2 \
+    --mm_use_im_start_end False \
+    --mm_use_im_patch_token False \
+    --bf16 True \
+    --output_dir ../../checkpoints/336_graft-llava-llama3-32k \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 16 \
+    --per_device_eval_batch_size 4 \
+    --gradient_accumulation_steps 1 \
+    --evaluation_strategy "no" \
+    --save_strategy "steps" \
+    --save_steps 24000 \
+    --save_total_limit 1 \
+    --learning_rate 1e-3 \
+    --weight_decay 0. \
+    --warmup_ratio 0.03 \
+    --lr_scheduler_type "cosine" \
+    --logging_steps 1 \
+    --tf32 True \
+    --model_max_length 2048 \
+    --gradient_checkpointing True \
+    --dataloader_num_workers 4 \
+    --lazy_preprocess True \
+    --mm_use_im_start_end False \
+    --mm_use_im_patch_token False \
+    --report_to wandb
